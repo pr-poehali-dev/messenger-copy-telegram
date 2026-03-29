@@ -1,0 +1,11 @@
+{
+  "tests": [
+    {
+      "name": "Admin users unauthorized",
+      "method": "GET",
+      "path": "/users",
+      "expectedStatus": 401,
+      "bodyMatcher": "partial"
+    }
+  ]
+}

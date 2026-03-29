@@ -1,0 +1,11 @@
+{
+  "tests": [
+    {
+      "name": "Search users",
+      "method": "GET",
+      "path": "/users/search?q=test",
+      "expectedStatus": 401,
+      "bodyMatcher": "partial"
+    }
+  ]
+}

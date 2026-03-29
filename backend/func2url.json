@@ -1,0 +1,7 @@
+{
+  "auth": "https://functions.poehali.dev/47f7d725-4124-4b05-ab39-0249ccb5bc77",
+  "channels": "https://functions.poehali.dev/52eb1b3a-c269-4fdf-b58d-5b56e49fe087",
+  "groups": "https://functions.poehali.dev/434d016b-a36c-4f3c-bd13-ac43205a983d",
+  "admin": "https://functions.poehali.dev/e59ad2aa-1c39-4890-9f64-2f5ac4987456",
+  "messages": "https://functions.poehali.dev/c268ea8d-1de7-4eda-b40d-60a6dfcfc030"
+}

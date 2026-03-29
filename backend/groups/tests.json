@@ -1,0 +1,11 @@
+{
+  "tests": [
+    {
+      "name": "Get groups unauthorized",
+      "method": "GET",
+      "path": "/groups",
+      "expectedStatus": 401,
+      "bodyMatcher": "partial"
+    }
+  ]
+}
