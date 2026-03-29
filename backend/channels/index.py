@@ -17,7 +17,7 @@ def handler(event: dict, context) -> dict:
     headers = {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, X-Authorization",
+        "Access-Control-Allow-Headers": "Content-Type, X-Auth-Token, X-Authorization",
         "Content-Type": "application/json"
     }
 
@@ -27,12 +27,12 @@ def handler(event: dict, context) -> dict:
     method = event.get("httpMethod", "GET")
     path = event.get("path", "/")
     params = event.get("queryStringParameters") or {}
+    action = params.get("action", "")
     body = {}
     if event.get("body"):
         body = json.loads(event["body"])
 
-    auth = event.get("headers", {}).get("X-Authorization", "")
-    token = auth.replace("Bearer ", "")
+    token = event.get("headers", {}).get("X-Auth-Token", "")
 
     conn = get_conn()
     cur = conn.cursor()
@@ -42,8 +42,26 @@ def handler(event: dict, context) -> dict:
         if not user_id:
             return {"statusCode": 401, "headers": headers, "body": json.dumps({"error": "Не авторизован"})}
 
-        # GET /channels
-        if method == "GET" and (path.endswith("/channels") or path == "/"):
+        channel_id = params.get("channel_id")
+        if channel_id:
+            channel_id = int(channel_id)
+
+        if action == "list" or (method == "GET" and path.endswith("/channels")):
+            route = "list"
+        elif action == "create" or (method == "POST" and path.endswith("/channels")):
+            route = "create"
+        elif action == "posts" or (method == "GET" and "/posts" in path):
+            route = "posts"
+        elif action == "post" or (method == "POST" and "/posts" in path):
+            route = "post"
+        elif action == "subscribe" or "/subscribe" in path:
+            route = "subscribe"
+        elif action == "react" or (method == "POST" and "/reactions" in path):
+            route = "react"
+        else:
+            route = "list"
+
+        if route == "list":
             cur.execute(f"""
                 SELECT c.id, c.name, c.description, c.avatar_url, c.created_at,
                     u.username as creator, u.display_name as creator_name,
@@ -68,8 +86,7 @@ def handler(event: dict, context) -> dict:
                 })
             return {"statusCode": 200, "headers": headers, "body": json.dumps(channels)}
 
-        # POST /channels
-        elif method == "POST" and (path.endswith("/channels") or path == "/"):
+        elif route == "create":
             name = body.get("name", "").strip()
             description = body.get("description", "")
             if not name:
@@ -78,18 +95,16 @@ def handler(event: dict, context) -> dict:
                 f"INSERT INTO {SCHEMA}.channels (name, description, creator_id) VALUES (%s, %s, %s) RETURNING id",
                 (name, description, user_id)
             )
-            channel_id = cur.fetchone()[0]
-            cur.execute(f"INSERT INTO {SCHEMA}.channel_subscribers (channel_id, user_id) VALUES (%s, %s)", (channel_id, user_id))
+            new_channel_id = cur.fetchone()[0]
+            cur.execute(f"INSERT INTO {SCHEMA}.channel_subscribers (channel_id, user_id) VALUES (%s, %s)", (new_channel_id, user_id))
             conn.commit()
-            return {"statusCode": 200, "headers": headers, "body": json.dumps({"id": channel_id, "name": name})}
+            return {"statusCode": 200, "headers": headers, "body": json.dumps({"id": new_channel_id, "name": name})}
 
-        # GET /channels/{id}/posts
-        elif method == "GET" and "/posts" in path:
-            parts = path.strip("/").split("/")
-            channel_id = int(parts[-2]) if parts[-1] == "posts" else int(parts[1])
+        elif route == "posts":
+            if not channel_id:
+                return {"statusCode": 400, "headers": headers, "body": json.dumps({"error": "channel_id required"})}
             offset = int(params.get("offset", 0))
             limit = int(params.get("limit", 50))
-
             cur.execute(f"""
                 SELECT cp.id, cp.author_id, cp.content, cp.created_at,
                     u.username, u.display_name, u.avatar_url
@@ -113,16 +128,13 @@ def handler(event: dict, context) -> dict:
                 })
             return {"statusCode": 200, "headers": headers, "body": json.dumps(posts)}
 
-        # POST /channels/{id}/posts
-        elif method == "POST" and "/posts" in path:
-            parts = path.strip("/").split("/")
-            channel_id = int(parts[-2]) if parts[-1] == "posts" else int(parts[1])
+        elif route == "post":
+            if not channel_id:
+                return {"statusCode": 400, "headers": headers, "body": json.dumps({"error": "channel_id required"})}
             content = body.get("content", "").strip()
-
             cur.execute(f"SELECT id FROM {SCHEMA}.channels WHERE id=%s AND creator_id=%s", (channel_id, user_id))
             if not cur.fetchone():
                 return {"statusCode": 403, "headers": headers, "body": json.dumps({"error": "Только создатель может публиковать"})}
-
             cur.execute(
                 f"INSERT INTO {SCHEMA}.channel_posts (channel_id, author_id, content) VALUES (%s, %s, %s) RETURNING id, created_at",
                 (channel_id, user_id, content)
@@ -133,10 +145,9 @@ def handler(event: dict, context) -> dict:
                 "id": post_id, "content": content, "created_at": created_at.isoformat()
             })}
 
-        # POST /channels/{id}/subscribe
-        elif method == "POST" and "/subscribe" in path:
-            parts = path.strip("/").split("/")
-            channel_id = int(parts[-2])
+        elif route == "subscribe":
+            if not channel_id:
+                return {"statusCode": 400, "headers": headers, "body": json.dumps({"error": "channel_id required"})}
             cur.execute(
                 f"INSERT INTO {SCHEMA}.channel_subscribers (channel_id, user_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
                 (channel_id, user_id)
@@ -144,9 +155,7 @@ def handler(event: dict, context) -> dict:
             conn.commit()
             return {"statusCode": 200, "headers": headers, "body": json.dumps({"ok": True})}
 
-        # POST /channels/{id}/reactions
-        elif method == "POST" and "/reactions" in path:
-            parts = path.strip("/").split("/")
+        elif route == "react":
             post_id = body.get("post_id")
             emoji = body.get("emoji")
             cur.execute(

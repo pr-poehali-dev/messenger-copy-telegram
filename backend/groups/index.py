@@ -18,7 +18,7 @@ def handler(event: dict, context) -> dict:
     headers = {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, X-Authorization",
+        "Access-Control-Allow-Headers": "Content-Type, X-Auth-Token, X-Authorization",
         "Content-Type": "application/json"
     }
 
@@ -28,12 +28,12 @@ def handler(event: dict, context) -> dict:
     method = event.get("httpMethod", "GET")
     path = event.get("path", "/")
     params = event.get("queryStringParameters") or {}
+    action = params.get("action", "")
     body = {}
     if event.get("body"):
         body = json.loads(event["body"])
 
-    auth = event.get("headers", {}).get("X-Authorization", "")
-    token = auth.replace("Bearer ", "")
+    token = event.get("headers", {}).get("X-Auth-Token", "")
 
     conn = get_conn()
     cur = conn.cursor()
@@ -43,8 +43,34 @@ def handler(event: dict, context) -> dict:
         if not user_id:
             return {"statusCode": 401, "headers": headers, "body": json.dumps({"error": "Не авторизован"})}
 
-        # GET /groups - список групп пользователя
-        if method == "GET" and (path.endswith("/groups") or path == "/"):
+        # Determine route
+        if action == "list" or (method == "GET" and path.endswith("/groups")):
+            route = "list"
+        elif action == "create" or (method == "POST" and path.endswith("/groups")):
+            route = "create"
+        elif action == "messages" or (method == "GET" and "/messages" in path):
+            route = "messages"
+        elif action == "send" or (method == "POST" and "/messages" in path):
+            route = "send"
+        elif action == "join" or "/join" in path:
+            route = "join"
+        elif action == "react" or (method == "POST" and "/reactions" in path):
+            route = "react"
+        else:
+            route = "list"
+
+        # Extract group_id
+        group_id = params.get("group_id")
+        if group_id:
+            group_id = int(group_id)
+        elif "/messages" in path or "/join" in path or "/reactions" in path:
+            parts = path.strip("/").split("/")
+            for i, p in enumerate(parts):
+                if p.isdigit():
+                    group_id = int(p)
+                    break
+
+        if route == "list":
             cur.execute(f"""
                 SELECT g.id, g.name, g.description, g.avatar_url, g.created_at,
                     u.username as creator, u.display_name as creator_name,
@@ -70,8 +96,7 @@ def handler(event: dict, context) -> dict:
                 })
             return {"statusCode": 200, "headers": headers, "body": json.dumps(groups)}
 
-        # POST /groups - создать группу
-        elif method == "POST" and (path.endswith("/groups") or path == "/"):
+        elif route == "create":
             name = body.get("name", "").strip()
             description = body.get("description", "")
             if not name:
@@ -80,22 +105,19 @@ def handler(event: dict, context) -> dict:
                 f"INSERT INTO {SCHEMA}.groups (name, description, creator_id) VALUES (%s, %s, %s) RETURNING id",
                 (name, description, user_id)
             )
-            group_id = cur.fetchone()[0]
-            cur.execute(f"INSERT INTO {SCHEMA}.group_members (group_id, user_id, role) VALUES (%s, %s, 'admin')", (group_id, user_id))
+            new_group_id = cur.fetchone()[0]
+            cur.execute(f"INSERT INTO {SCHEMA}.group_members (group_id, user_id, role) VALUES (%s, %s, 'admin')", (new_group_id, user_id))
             conn.commit()
-            return {"statusCode": 200, "headers": headers, "body": json.dumps({"id": group_id, "name": name})}
+            return {"statusCode": 200, "headers": headers, "body": json.dumps({"id": new_group_id, "name": name})}
 
-        # GET /groups/{id}/messages
-        elif method == "GET" and "/messages" in path:
-            parts = path.strip("/").split("/")
-            group_id = int(parts[-2]) if parts[-1] == "messages" else int(parts[1])
+        elif route == "messages":
+            if not group_id:
+                return {"statusCode": 400, "headers": headers, "body": json.dumps({"error": "group_id required"})}
             offset = int(params.get("offset", 0))
             limit = int(params.get("limit", 50))
-
             cur.execute(f"SELECT id FROM {SCHEMA}.group_members WHERE group_id=%s AND user_id=%s", (group_id, user_id))
             if not cur.fetchone():
                 return {"statusCode": 403, "headers": headers, "body": json.dumps({"error": "Нет доступа"})}
-
             cur.execute(f"""
                 SELECT gm.id, gm.sender_id, gm.content, gm.created_at, gm.disappears_at,
                     u.username, u.display_name, u.avatar_url
@@ -123,21 +145,17 @@ def handler(event: dict, context) -> dict:
                 })
             return {"statusCode": 200, "headers": headers, "body": json.dumps(messages)}
 
-        # POST /groups/{id}/messages
-        elif method == "POST" and "/messages" in path:
-            parts = path.strip("/").split("/")
-            group_id = int(parts[-2]) if parts[-1] == "messages" else int(parts[1])
+        elif route == "send":
+            if not group_id:
+                return {"statusCode": 400, "headers": headers, "body": json.dumps({"error": "group_id required"})}
             content = body.get("content", "").strip()
             disappear_hours = body.get("disappear_hours")
-
             cur.execute(f"SELECT id FROM {SCHEMA}.group_members WHERE group_id=%s AND user_id=%s", (group_id, user_id))
             if not cur.fetchone():
                 return {"statusCode": 403, "headers": headers, "body": json.dumps({"error": "Нет доступа"})}
-
             disappears_at = None
             if disappear_hours:
                 disappears_at = datetime.now() + timedelta(hours=float(disappear_hours))
-
             cur.execute(
                 f"INSERT INTO {SCHEMA}.group_messages (group_id, sender_id, content, disappears_at) VALUES (%s, %s, %s, %s) RETURNING id, created_at",
                 (group_id, user_id, content, disappears_at)
@@ -149,10 +167,9 @@ def handler(event: dict, context) -> dict:
                 "created_at": created_at.isoformat()
             })}
 
-        # POST /groups/{id}/join
-        elif method == "POST" and "/join" in path:
-            parts = path.strip("/").split("/")
-            group_id = int(parts[-2])
+        elif route == "join":
+            if not group_id:
+                return {"statusCode": 400, "headers": headers, "body": json.dumps({"error": "group_id required"})}
             cur.execute(
                 f"INSERT INTO {SCHEMA}.group_members (group_id, user_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
                 (group_id, user_id)
@@ -160,10 +177,7 @@ def handler(event: dict, context) -> dict:
             conn.commit()
             return {"statusCode": 200, "headers": headers, "body": json.dumps({"ok": True})}
 
-        # POST /groups/{id}/reactions
-        elif method == "POST" and "/reactions" in path:
-            parts = path.strip("/").split("/")
-            group_id = int(parts[-2])
+        elif route == "react":
             message_id = body.get("message_id")
             emoji = body.get("emoji")
             cur.execute(

@@ -21,7 +21,7 @@ def handler(event: dict, context) -> dict:
     headers = {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, X-Authorization",
+        "Access-Control-Allow-Headers": "Content-Type, X-Auth-Token, X-Authorization",
         "Content-Type": "application/json"
     }
 
@@ -31,12 +31,12 @@ def handler(event: dict, context) -> dict:
     method = event.get("httpMethod", "GET")
     path = event.get("path", "/")
     params = event.get("queryStringParameters") or {}
+    action = params.get("action", "")
     body = {}
     if event.get("body"):
         body = json.loads(event["body"])
 
-    auth = event.get("headers", {}).get("X-Authorization", "")
-    token = auth.replace("Bearer ", "")
+    token = event.get("headers", {}).get("X-Auth-Token", "")
 
     conn = get_conn()
     cur = conn.cursor()
@@ -47,7 +47,7 @@ def handler(event: dict, context) -> dict:
             return {"statusCode": 401, "headers": headers, "body": json.dumps({"error": "Не авторизован"})}
 
         # GET /chats - список диалогов
-        if method == "GET" and path.endswith("/chats"):
+        if method == "GET" and (path.endswith("/chats") or action == "chats"):
             cur.execute(f"""
                 SELECT DISTINCT ON (partner_id) partner_id, u.username, u.display_name, u.avatar_url, u.is_online,
                     dm.content, dm.created_at, dm.sender_id,
@@ -74,7 +74,7 @@ def handler(event: dict, context) -> dict:
             return {"statusCode": 200, "headers": headers, "body": json.dumps(chats)}
 
         # GET /messages?with=user_id
-        elif method == "GET" and path.endswith("/messages"):
+        elif method == "GET" and (path.endswith("/messages") or action == "messages"):
             with_user = int(params.get("with", 0))
             offset = int(params.get("offset", 0))
             limit = int(params.get("limit", 50))
@@ -113,7 +113,7 @@ def handler(event: dict, context) -> dict:
             return {"statusCode": 200, "headers": headers, "body": json.dumps(messages)}
 
         # POST /messages
-        elif method == "POST" and path.endswith("/messages"):
+        elif method == "POST" and (path.endswith("/messages") or action == "send"):
             receiver_id = body.get("receiver_id")
             content = body.get("content", "").strip()
             disappear_hours = body.get("disappear_hours")
@@ -139,7 +139,7 @@ def handler(event: dict, context) -> dict:
             })}
 
         # POST /reactions
-        elif method == "POST" and path.endswith("/reactions"):
+        elif method == "POST" and (path.endswith("/reactions") or action == "react"):
             message_id = body.get("message_id")
             emoji = body.get("emoji")
             if not message_id or not emoji:
@@ -156,7 +156,7 @@ def handler(event: dict, context) -> dict:
             return {"statusCode": 200, "headers": headers, "body": json.dumps({"ok": True})}
 
         # GET /users/search?q=
-        elif method == "GET" and path.endswith("/users/search"):
+        elif method == "GET" and (path.endswith("/users/search") or action == "search"):
             q = params.get("q", "").strip()
             if not q:
                 return {"statusCode": 200, "headers": headers, "body": json.dumps([])}

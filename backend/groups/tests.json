@@ -3,7 +3,7 @@
     {
       "name": "Get groups unauthorized",
       "method": "GET",
-      "path": "/groups",
+      "path": "/?action=list",
       "expectedStatus": 401,
       "bodyMatcher": "partial"
     }

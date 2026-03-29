@@ -3,7 +3,7 @@
     {
       "name": "Get channels unauthorized",
       "method": "GET",
-      "path": "/channels",
+      "path": "/?action=list",
       "expectedStatus": 401,
       "bodyMatcher": "partial"
     }

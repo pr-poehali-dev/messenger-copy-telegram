@@ -15,7 +15,7 @@ async function req(base: string, path: string, method = "GET", body?: unknown, e
     method,
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${getToken()}`,
+      "X-Auth-Token": getToken(),
       ...extraHeaders,
     },
     body: body ? JSON.stringify(body) : undefined,
@@ -28,67 +28,67 @@ async function req(base: string, path: string, method = "GET", body?: unknown, e
 export const api = {
   auth: {
     register: (d: { username: string; email: string; password: string; display_name?: string }) =>
-      req(URLS.auth, "/register", "POST", d),
+      req(URLS.auth, "/?action=register", "POST", d),
     login: (d: { login: string; password: string }) =>
-      req(URLS.auth, "/login", "POST", d),
-    logout: () => req(URLS.auth, "/logout", "POST"),
-    me: () => req(URLS.auth, "/me"),
+      req(URLS.auth, "/?action=login", "POST", d),
+    logout: () => req(URLS.auth, "/?action=logout", "POST"),
+    me: () => req(URLS.auth, "/?action=me"),
     updateProfile: (d: { display_name?: string; bio?: string; avatar_url?: string }) =>
-      req(URLS.auth, "/profile", "PUT", d),
+      req(URLS.auth, "/?action=profile", "PUT", d),
   },
   messages: {
-    chats: () => req(URLS.messages, "/chats"),
+    chats: () => req(URLS.messages, "/?action=chats"),
     list: (withUser: number, offset = 0) =>
-      req(URLS.messages, `/messages?with=${withUser}&offset=${offset}`),
+      req(URLS.messages, `/?action=messages&with=${withUser}&offset=${offset}`),
     send: (d: { receiver_id: number; content: string; disappear_hours?: number }) =>
-      req(URLS.messages, "/messages", "POST", d),
+      req(URLS.messages, "/?action=send", "POST", d),
     react: (message_id: number, emoji: string) =>
-      req(URLS.messages, "/reactions", "POST", { message_id, emoji }),
+      req(URLS.messages, "/?action=react", "POST", { message_id, emoji }),
     searchUsers: (q: string) =>
-      req(URLS.messages, `/users/search?q=${encodeURIComponent(q)}`),
+      req(URLS.messages, `/?action=search&q=${encodeURIComponent(q)}`),
   },
   groups: {
-    list: () => req(URLS.groups, "/groups"),
+    list: () => req(URLS.groups, "/?action=list"),
     create: (d: { name: string; description?: string }) =>
-      req(URLS.groups, "/groups", "POST", d),
+      req(URLS.groups, "/?action=create", "POST", d),
     messages: (groupId: number, offset = 0) =>
-      req(URLS.groups, `/${groupId}/messages?offset=${offset}`),
+      req(URLS.groups, `/?action=messages&group_id=${groupId}&offset=${offset}`),
     send: (groupId: number, content: string, disappear_hours?: number) =>
-      req(URLS.groups, `/${groupId}/messages`, "POST", { content, disappear_hours }),
+      req(URLS.groups, `/?action=send&group_id=${groupId}`, "POST", { content, disappear_hours }),
     join: (groupId: number) =>
-      req(URLS.groups, `/${groupId}/join`, "POST"),
+      req(URLS.groups, `/?action=join&group_id=${groupId}`, "POST"),
     react: (groupId: number, message_id: number, emoji: string) =>
-      req(URLS.groups, `/${groupId}/reactions`, "POST", { message_id, emoji }),
+      req(URLS.groups, `/?action=react&group_id=${groupId}`, "POST", { message_id, emoji }),
   },
   channels: {
-    list: () => req(URLS.channels, "/channels"),
+    list: () => req(URLS.channels, "/?action=list"),
     create: (d: { name: string; description?: string }) =>
-      req(URLS.channels, "/channels", "POST", d),
+      req(URLS.channels, "/?action=create", "POST", d),
     posts: (channelId: number, offset = 0) =>
-      req(URLS.channels, `/${channelId}/posts?offset=${offset}`),
+      req(URLS.channels, `/?action=posts&channel_id=${channelId}&offset=${offset}`),
     post: (channelId: number, content: string) =>
-      req(URLS.channels, `/${channelId}/posts`, "POST", { content }),
+      req(URLS.channels, `/?action=post&channel_id=${channelId}`, "POST", { content }),
     subscribe: (channelId: number) =>
-      req(URLS.channels, `/${channelId}/subscribe`, "POST"),
+      req(URLS.channels, `/?action=subscribe&channel_id=${channelId}`, "POST"),
     react: (channelId: number, post_id: number, emoji: string) =>
-      req(URLS.channels, `/${channelId}/reactions`, "POST", { post_id, emoji }),
+      req(URLS.channels, `/?action=react&channel_id=${channelId}`, "POST", { post_id, emoji }),
   },
   admin: {
-    stats: () => req(URLS.admin, "/stats"),
-    users: (q?: string) => req(URLS.admin, `/users${q ? `?q=${encodeURIComponent(q)}` : ""}`),
+    stats: () => req(URLS.admin, "/?action=stats"),
+    users: (q?: string) => req(URLS.admin, `/?action=users${q ? `&q=${encodeURIComponent(q)}` : ""}`),
     blockUser: (id: number, reason: string, hours?: number) =>
-      req(URLS.admin, `/users/${id}/block`, "POST", { reason, hours }),
+      req(URLS.admin, `/?action=block&user_id=${id}`, "POST", { reason, hours }),
     unblockUser: (id: number) =>
-      req(URLS.admin, `/users/${id}/unblock`, "POST"),
-    groups: (q?: string) => req(URLS.admin, `/groups${q ? `?q=${encodeURIComponent(q)}` : ""}`),
+      req(URLS.admin, `/?action=unblock&user_id=${id}`, "POST"),
+    groups: (q?: string) => req(URLS.admin, `/?action=groups${q ? `&q=${encodeURIComponent(q)}` : ""}`),
     groupMessages: (groupId: number) =>
-      req(URLS.admin, `/group-messages?group_id=${groupId}`),
+      req(URLS.admin, `/?action=group-messages&group_id=${groupId}`),
     deactivateGroup: (groupId: number) =>
-      req(URLS.admin, `/deactivate-group?group_id=${groupId}`, "PUT"),
-    channels: (q?: string) => req(URLS.admin, `/channels${q ? `?q=${encodeURIComponent(q)}` : ""}`),
+      req(URLS.admin, `/?action=deactivate-group&group_id=${groupId}`, "PUT"),
+    channels: (q?: string) => req(URLS.admin, `/?action=channels${q ? `&q=${encodeURIComponent(q)}` : ""}`),
     channelMessages: (channelId: number) =>
-      req(URLS.admin, `/channel-messages?channel_id=${channelId}`),
+      req(URLS.admin, `/?action=channel-messages&channel_id=${channelId}`),
     deactivateChannel: (channelId: number) =>
-      req(URLS.admin, `/deactivate-channel?channel_id=${channelId}`, "PUT"),
+      req(URLS.admin, `/?action=deactivate-channel&channel_id=${channelId}`, "PUT"),
   },
 };

@@ -3,7 +3,7 @@
     {
       "name": "Admin users unauthorized",
       "method": "GET",
-      "path": "/users",
+      "path": "/?action=stats",
       "expectedStatus": 401,
       "bodyMatcher": "partial"
     }
